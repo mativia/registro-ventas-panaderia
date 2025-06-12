@@ -7,6 +7,7 @@ class Producto:
     nombre: str
     precio: Decimal
     unidad: str
+    id: int = None
 
 @dataclass
 class Venta:
