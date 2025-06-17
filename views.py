@@ -603,16 +603,16 @@ class VentasView:
         # Crear ventana personalizada para mostrar el total
         dialog = ttk.Toplevel(self.ventana)
         dialog.title("Total de la Venta")
-        dialog.geometry("400x300")
+        dialog.geometry("530x540")
         dialog.transient(self.ventana)
         dialog.grab_set()
 
         # Centrar la ventana
         screen_width = dialog.winfo_screenwidth()
         screen_height = dialog.winfo_screenheight()
-        x = (screen_width - 400) // 2
-        y = (screen_height - 300) // 2
-        dialog.geometry(f"400x300+{x}+{y}")
+        x = (screen_width - 530) // 2
+        y = (screen_height - 540) // 2
+        dialog.geometry(f"530x540+{x}+{y}")
 
         # Frame principal con padding
         main_frame = ttk.Frame(dialog, padding=20)
@@ -636,9 +636,10 @@ class VentasView:
             font=("Helvetica", 14)
         ).pack(side=LEFT)
 
+        total_actual = self.controller.total_actual
         ttk.Label(
             total_frame,
-            text=f"${self.controller.total_actual:.2f}",
+            text=f"${total_actual:.2f}",
             font=("Helvetica", 20, "bold"),
             bootstyle="success"
         ).pack(side=RIGHT)
@@ -646,23 +647,156 @@ class VentasView:
         # Separador
         ttk.Separator(main_frame, orient=HORIZONTAL).pack(fill=X, pady=20)
 
+        # Frame para el cálculo del vuelto
+        vuelto_frame = ttk.LabelFrame(
+            main_frame,
+            text="Cálculo de Vuelto",
+            padding=15,
+            bootstyle="primary"
+        )
+        vuelto_frame.pack(fill=X, pady=10)
+
+        # Monto recibido
+        recibido_frame = ttk.Frame(vuelto_frame)
+        recibido_frame.pack(fill=X, pady=5)
+
+        ttk.Label(
+            recibido_frame,
+            text="Monto Recibido:",
+            font=("Helvetica", 12)
+        ).pack(side=LEFT)
+
+        monto_recibido_var = ttk.StringVar()
+        monto_recibido_entry = ttk.Entry(
+            recibido_frame,
+            textvariable=monto_recibido_var,
+            font=("Helvetica", 12),
+            width=15,
+            bootstyle="primary"
+        )
+        monto_recibido_entry.pack(side=RIGHT)
+        monto_recibido_entry.focus()
+
+        # Vuelto
+        vuelto_resultado_frame = ttk.Frame(vuelto_frame)
+        vuelto_resultado_frame.pack(fill=X, pady=5)
+
+        ttk.Label(
+            vuelto_resultado_frame,
+            text="Vuelto:",
+            font=("Helvetica", 12)
+        ).pack(side=LEFT)
+
+        vuelto_label = ttk.Label(
+            vuelto_resultado_frame,
+            text="$0.00",
+            font=("Helvetica", 16, "bold"),
+            bootstyle="info"
+        )
+        vuelto_label.pack(side=RIGHT)
+
+        def calcular_vuelto(*args):
+            try:
+                # Obtener el valor del monto recibido y convertirlo a float
+                monto_texto = monto_recibido_var.get().strip()
+                if not monto_texto:  # Si está vacío
+                    vuelto_label.config(
+                        text="$0.00",
+                        bootstyle="info"
+                    )
+                    return
+
+                # Reemplazar coma por punto para manejar ambos formatos
+                monto_texto = monto_texto.replace(',', '.')
+                # Convertir a Decimal en lugar de float
+                from decimal import Decimal
+                recibido = Decimal(monto_texto)
+                
+                # Redondear a 2 decimales para evitar problemas de precisión
+                recibido = round(recibido, 2)
+                vuelto = round(recibido - total_actual, 2)
+                
+                # Actualizar el label del vuelto
+                if vuelto >= 0:
+                    vuelto_label.config(
+                        text=f"${float(vuelto):.2f}",
+                        bootstyle="success"
+                    )
+                else:
+                    vuelto_label.config(
+                        text=f"Faltan ${abs(float(vuelto)):.2f}",
+                        bootstyle="danger"
+                    )
+            except ValueError:
+                vuelto_label.config(
+                    text="Monto inválido",
+                    bootstyle="danger"
+                )
+
+        # Vincular el cálculo al cambio del monto recibido
+        monto_recibido_var.trace_add("write", calcular_vuelto)
+
+        # Configurar el campo de monto recibido para aceptar solo números, punto y coma
+        def validar_monto(P):
+            if P == "": return True
+            # Permitir solo números, un punto o una coma
+            if P.count('.') <= 1 and P.count(',') <= 1:
+                # Remover punto o coma para verificar si el resto son números
+                P = P.replace('.', '').replace(',', '')
+                return P.isdigit()
+            return False
+
+        vcmd = (dialog.register(validar_monto), '%P')
+        monto_recibido_entry.config(validate='key', validatecommand=vcmd)
+
+        # Formatear el monto al perder el foco
+        def formatear_monto(event):
+            try:
+                monto_texto = monto_recibido_var.get().strip()
+                if monto_texto:
+                    # Reemplazar coma por punto
+                    monto_texto = monto_texto.replace(',', '.')
+                    # Convertir a Decimal y formatear
+                    from decimal import Decimal
+                    monto = Decimal(monto_texto)
+                    monto_recibido_var.set(f"{float(monto):.2f}")
+            except ValueError:
+                pass
+
+        monto_recibido_entry.bind('<FocusOut>', formatear_monto)
+
         # Botones
         btn_frame = ttk.Frame(main_frame)
         btn_frame.pack(fill=X, pady=(20, 0))
 
         def finalizar_venta():
-            dialog.destroy()
-            # Registrar la venta en el historial
-            self.controller.registrar_venta_actual()
-            # Limpiar la lista de ventas actual
-            for item in self.lista_ventas.get_children():
-                self.lista_ventas.delete(item)
-            self._actualizar_total()
-            ttk.dialogs.Messagebox.show_info(
-                "Venta Finalizada",
-                "La venta ha sido registrada correctamente",
-                parent=self.ventana
-            )
+            try:
+                recibido = float(monto_recibido_var.get() or 0)
+                if recibido < total_actual:
+                    ttk.dialogs.Messagebox.show_warning(
+                        "Monto insuficiente",
+                        "El monto recibido es menor al total a cobrar",
+                        parent=dialog
+                    )
+                    return
+                dialog.destroy()
+                # Registrar la venta en el historial
+                self.controller.registrar_venta_actual()
+                # Limpiar la lista de ventas actual
+                for item in self.lista_ventas.get_children():
+                    self.lista_ventas.delete(item)
+                self._actualizar_total()
+                ttk.dialogs.Messagebox.show_info(
+                    "Venta Finalizada",
+                    "La venta ha sido registrada correctamente",
+                    parent=self.ventana
+                )
+            except ValueError:
+                ttk.dialogs.Messagebox.show_warning(
+                    "Monto inválido",
+                    "Por favor ingrese un monto válido",
+                    parent=dialog
+                )
 
         def cancelar():
             dialog.destroy()
