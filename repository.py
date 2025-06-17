@@ -1,8 +1,10 @@
 from decimal import Decimal
 from datetime import datetime
-from fpdf import FPDF
-from typing import List, Optional
+from typing import List, Optional, Dict
 from models import Producto, Venta, RegistroVentas
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, PatternFill
+import os
 
 class VentasRepository:
     def __init__(self):
@@ -67,24 +69,67 @@ class VentasRepository:
             return True
         return False
 
-    def generar_pdf(self, registro: RegistroVentas) -> str:
-        fecha = datetime.now().strftime("%Y-%m-%d")
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", size=12)
-        pdf.cell(200, 10, txt=f"Ventas del día {fecha}", ln=True, align="C")
-        pdf.ln(10)
-
-        for venta in registro.ventas:
-            linea = (f"{venta.producto.nombre} - {venta.cantidad} "
-                    f"{venta.producto.unidad} x ${venta.producto.precio:.2f} = "
-                    f"${venta.total:.2f}")
-            pdf.cell(200, 10, txt=linea, ln=True)
-
-        pdf.ln(10)
-        pdf.set_font("Arial", 'B', 12)
-        pdf.cell(200, 10, txt=f"TOTAL DEL DÍA: ${registro.total_dia:.2f}", ln=True)
-
-        nombre_archivo = f"Ventas_{fecha}.pdf"
-        pdf.output(nombre_archivo)
-        return nombre_archivo 
+    def generar_excel(self, ventas: List[Dict], turno: str) -> str:
+        """Genera un archivo Excel con las ventas del día"""
+        try:
+            # Crear directorio si no existe
+            os.makedirs("ventas", exist_ok=True)
+            
+            # Generar nombre del archivo con fecha y turno
+            fecha = datetime.now().strftime("%Y-%m-%d")
+            nombre_archivo = f"ventas/ventas_{fecha}_{turno}.xlsx"
+            
+            # Crear un nuevo libro de Excel
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Ventas"
+            
+            # Escribir encabezados
+            ws.append([
+                "Fecha",
+                "Hora",
+                "Producto",
+                "Cantidad",
+                "Precio Unitario",
+                "Subtotal"
+            ])
+            
+            # Escribir datos
+            total_caja = 0
+            for venta in ventas:
+                for item in venta['items']:
+                    subtotal = item['cantidad'] * item['precio']
+                    total_caja += subtotal
+                    ws.append([
+                        venta['fecha'],
+                        venta['hora'],
+                        item['producto'],
+                        item['cantidad'],
+                        item['precio'],
+                        subtotal
+                    ])
+            
+            # Agregar fila con el total
+            ws.append([])  # Línea en blanco
+            ws.append(["", "", "", "", "Total Caja:", total_caja])
+            
+            # Ajustar ancho de columnas
+            for col in ws.columns:
+                max_length = 0
+                column = col[0].column_letter
+                for cell in col:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = (max_length + 2)
+                ws.column_dimensions[column].width = adjusted_width
+            
+            # Guardar archivo
+            wb.save(nombre_archivo)
+            return nombre_archivo
+            
+        except Exception as e:
+            print(f"Error al generar Excel: {str(e)}")
+            raise 

@@ -7,6 +7,7 @@ class VentasController:
     def __init__(self, repository: VentasRepository):
         self.repository = repository
         self.registro = RegistroVentas([])
+        self.ventas_del_dia = []  # Lista para almacenar todas las ventas del día
 
     def get_productos(self) -> List[Producto]:
         return self.repository.get_productos()
@@ -95,17 +96,48 @@ class VentasController:
     def vaciar_registro(self):
         self.registro.vaciar()
 
-    def generar_pdf(self) -> Tuple[bool, str]:
-        if not self.registro.ventas:
+    def registrar_venta_actual(self):
+        """Registra la venta actual en el historial del día"""
+        if self.registro.ventas:
+            # Crear una copia de las ventas actuales
+            venta_actual = self.registro.ventas.copy()
+            # Agregar al historial del día
+            self.ventas_del_dia.extend(venta_actual)
+            # Limpiar el registro actual
+            self.registro.vaciar()
+            print(f"Venta registrada. Total de ventas del día: {len(self.ventas_del_dia)}")  # Debug
+
+    def cerrar_caja(self, turno: str) -> Tuple[bool, str]:
+        print(f"Intentando cerrar caja. Ventas del día: {len(self.ventas_del_dia)}")  # Debug
+        if not self.ventas_del_dia:
             return False, "No hay ventas para guardar"
             
         try:
-            nombre_archivo = self.repository.generar_pdf(self.registro)
-            self.registro.vaciar()
-            return True, f"PDF guardado como {nombre_archivo}"
+            # Crear un registro temporal con todas las ventas del día
+            registro_dia = RegistroVentas(self.ventas_del_dia)
+            nombre_archivo = self.repository.generar_excel(registro_dia, turno)
+            # Limpiar el historial después de guardar
+            self.ventas_del_dia.clear()
+            return True, f"Excel {turno} generado como {nombre_archivo}"
         except Exception as e:
-            return False, f"Error al generar PDF: {str(e)}"
+            return False, f"Error al generar Excel: {str(e)}"
 
     @property
     def total_actual(self) -> Decimal:
-        return self.registro.total_dia 
+        return self.registro.total_dia
+
+    def get_ultima_venta(self) -> Optional[Venta]:
+        """Obtiene la última venta registrada"""
+        if self.registro.ventas:
+            return self.registro.ventas[-1]
+        return None
+
+    def generar_ticket(self, venta: Venta) -> str:
+        """Genera un ticket PDF para una venta individual"""
+        if not venta:
+            raise ValueError("No hay venta para generar el ticket")
+            
+        try:
+            return self.repository.generar_ticket(venta)
+        except Exception as e:
+            raise Exception(f"Error al generar el ticket: {str(e)}") 

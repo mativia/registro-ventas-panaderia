@@ -8,9 +8,18 @@ class VentasView:
         self.ventana = ttk.Window(
             title="Sistema de Ventas - Panadería",
             themename="cosmo",
-            resizable=(False, False)
+            resizable=(True, True)
         )
-        self.ventana.geometry("800x700")
+        self.ventana.geometry("1600x900")
+        self.ventana.minsize(1280, 800)
+        
+        # Centrar la ventana en la pantalla
+        screen_width = self.ventana.winfo_screenwidth()
+        screen_height = self.ventana.winfo_screenheight()
+        x = (screen_width - 1600) // 2
+        y = (screen_height - 900) // 2
+        self.ventana.geometry(f"1600x900+{x}+{y}")
+        
         self._init_ui()
 
     def _init_ui(self):
@@ -150,8 +159,12 @@ class VentasView:
         botones_frame = ttk.Frame(ventas_frame)
         botones_frame.pack(fill=X, pady=(10, 0))
 
+        # Frame para botones principales
+        botones_principales = ttk.Frame(botones_frame)
+        botones_principales.pack(fill=X, pady=5)
+
         ttk.Button(
-            botones_frame,
+            botones_principales,
             text="Agregar",
             command=self._agregar_venta,
             bootstyle="success",
@@ -159,7 +172,7 @@ class VentasView:
         ).pack(side=LEFT, padx=5)
 
         ttk.Button(
-            botones_frame,
+            botones_principales,
             text="Eliminar",
             command=self._eliminar_venta,
             bootstyle="danger",
@@ -167,11 +180,31 @@ class VentasView:
         ).pack(side=LEFT, padx=5)
 
         ttk.Button(
-            botones_frame,
+            botones_principales,
             text="Vaciar Ticket",
             command=self._vaciar_ticket,
             bootstyle="warning",
             width=15
+        ).pack(side=LEFT, padx=5)
+
+        # Frame para botones de caja
+        botones_caja = ttk.Frame(botones_frame)
+        botones_caja.pack(fill=X, pady=5)
+
+        ttk.Button(
+            botones_caja,
+            text="Generar Venta",
+            command=self._generar_venta,
+            bootstyle="success",
+            width=25
+        ).pack(side=LEFT, padx=5)
+
+        ttk.Button(
+            botones_caja,
+            text="Cerrar Caja",
+            command=self._cerrar_caja,
+            bootstyle="primary",
+            width=25
         ).pack(side=LEFT, padx=5)
 
         # Frame inferior
@@ -186,15 +219,6 @@ class VentasView:
             bootstyle="primary"
         )
         self.label_total.pack(side=RIGHT)
-
-        # Botón PDF
-        ttk.Button(
-            self.tab_ventas,
-            text="Generar PDF del día",
-            command=self._generar_pdf,
-            bootstyle="primary-outline",
-            width=25
-        ).pack(pady=10)
 
     def _init_ui_productos(self):
         # Frame superior para la lista de productos
@@ -566,23 +590,168 @@ class VentasView:
                 self.lista_ventas.delete(item)
             self._actualizar_total()
 
-    def _generar_pdf(self):
-        success, mensaje = self.controller.generar_pdf()
-        if success:
-            ttk.dialogs.Messagebox.show_info(
-                "PDF generado",
-                mensaje,
+    def _generar_venta(self):
+        # Verificar si hay ventas en la lista
+        if not self.lista_ventas.get_children():
+            ttk.dialogs.Messagebox.show_warning(
+                "No hay ventas",
+                "Debe agregar al menos un producto para generar la venta",
                 parent=self.ventana
             )
+            return
+
+        # Crear ventana personalizada para mostrar el total
+        dialog = ttk.Toplevel(self.ventana)
+        dialog.title("Total de la Venta")
+        dialog.geometry("400x300")
+        dialog.transient(self.ventana)
+        dialog.grab_set()
+
+        # Centrar la ventana
+        screen_width = dialog.winfo_screenwidth()
+        screen_height = dialog.winfo_screenheight()
+        x = (screen_width - 400) // 2
+        y = (screen_height - 300) // 2
+        dialog.geometry(f"400x300+{x}+{y}")
+
+        # Frame principal con padding
+        main_frame = ttk.Frame(dialog, padding=20)
+        main_frame.pack(fill=BOTH, expand=YES)
+
+        # Título
+        ttk.Label(
+            main_frame,
+            text="TOTAL A COBRAR",
+            font=("Helvetica", 16, "bold"),
+            bootstyle="primary"
+        ).pack(pady=(0, 20))
+
+        # Monto total
+        total_frame = ttk.Frame(main_frame)
+        total_frame.pack(fill=X, pady=10)
+
+        ttk.Label(
+            total_frame,
+            text="Monto Total:",
+            font=("Helvetica", 14)
+        ).pack(side=LEFT)
+
+        ttk.Label(
+            total_frame,
+            text=f"${self.controller.total_actual:.2f}",
+            font=("Helvetica", 20, "bold"),
+            bootstyle="success"
+        ).pack(side=RIGHT)
+
+        # Separador
+        ttk.Separator(main_frame, orient=HORIZONTAL).pack(fill=X, pady=20)
+
+        # Botones
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(fill=X, pady=(20, 0))
+
+        def finalizar_venta():
+            dialog.destroy()
+            # Registrar la venta en el historial
+            self.controller.registrar_venta_actual()
+            # Limpiar la lista de ventas actual
             for item in self.lista_ventas.get_children():
                 self.lista_ventas.delete(item)
             self._actualizar_total()
-        else:
             ttk.dialogs.Messagebox.show_info(
-                "Sin datos",
-                mensaje,
+                "Venta Finalizada",
+                "La venta ha sido registrada correctamente",
                 parent=self.ventana
             )
+
+        def cancelar():
+            dialog.destroy()
+
+        ttk.Button(
+            btn_frame,
+            text="Finalizar Venta",
+            command=finalizar_venta,
+            bootstyle="success",
+            width=20
+        ).pack(side=LEFT, padx=5)
+
+        ttk.Button(
+            btn_frame,
+            text="Cancelar",
+            command=cancelar,
+            bootstyle="secondary",
+            width=20
+        ).pack(side=RIGHT, padx=5)
+
+        # Hacer que la ventana sea modal
+        dialog.wait_window()
+
+    def _cerrar_caja(self):
+        # Verificar si hay ventas en el historial
+        if not self.controller.ventas_del_dia:
+            ttk.dialogs.Messagebox.show_warning(
+                "No hay ventas",
+                "No hay ventas registradas para cerrar caja",
+                parent=self.ventana
+            )
+            return
+
+        # Crear diálogo para seleccionar turno
+        dialog = ttk.Toplevel(self.ventana)
+        dialog.title("Seleccionar Turno")
+        dialog.geometry("400x200")
+        dialog.transient(self.ventana)
+        dialog.grab_set()
+
+        # Frame para el diálogo
+        frame = ttk.Frame(dialog, padding=20)
+        frame.pack(fill=BOTH, expand=YES)
+
+        ttk.Label(
+            frame,
+            text="Seleccione el turno:",
+            font=("Helvetica", 12)
+        ).pack(pady=10)
+
+        # Frame para botones
+        btn_frame = ttk.Frame(frame)
+        btn_frame.pack(fill=X, pady=10)
+
+        def seleccionar_turno(turno: str):
+            dialog.destroy()
+            success, mensaje = self.controller.cerrar_caja(turno)
+            if success:
+                ttk.dialogs.Messagebox.show_info(
+                    "Cierre de Caja",
+                    mensaje,
+                    parent=self.ventana
+                )
+                # Limpiar la lista de ventas actual si hay algo
+                for item in self.lista_ventas.get_children():
+                    self.lista_ventas.delete(item)
+                self._actualizar_total()
+            else:
+                ttk.dialogs.Messagebox.show_error(
+                    "Error",
+                    mensaje,
+                    parent=self.ventana
+                )
+
+        ttk.Button(
+            btn_frame,
+            text="Mañana",
+            command=lambda: seleccionar_turno("mañana"),
+            bootstyle="primary",
+            width=15
+        ).pack(side=LEFT, padx=5)
+
+        ttk.Button(
+            btn_frame,
+            text="Tarde",
+            command=lambda: seleccionar_turno("tarde"),
+            bootstyle="primary",
+            width=15
+        ).pack(side=LEFT, padx=5)
 
     def run(self):
         self.ventana.mainloop() 
