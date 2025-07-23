@@ -2,6 +2,9 @@ import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 from controllers import VentasController
 
+
+
+
 class VentasView:
     def __init__(self, controller: VentasController):
         self.controller = controller
@@ -36,6 +39,11 @@ class VentasView:
         self.tab_productos = ttk.Frame(self.notebook, padding=20)
         self.notebook.add(self.tab_productos, text="Productos")
         self._init_ui_productos()
+
+        # Pestaña de Ventas en BD
+        self.tab_ventas_bd = ttk.Frame(self.notebook, padding=20)
+        self.notebook.add(self.tab_ventas_bd, text="Ventas en BD")
+        self._init_ui_ventas_bd()
 
     def _init_ui_ventas(self):
         # Título
@@ -348,6 +356,68 @@ class VentasView:
 
         # Bind para selección en el tree
         self.tree_productos.bind("<<TreeviewSelect>>", self._on_producto_selected)
+
+    def _init_ui_ventas_bd(self):
+        # Frame principal
+        frame = ttk.LabelFrame(
+            self.tab_ventas_bd,
+            text="Ventas guardadas en la base de datos",
+            padding=15,
+            bootstyle="primary"
+        )
+        frame.pack(fill=BOTH, expand=YES, pady=(0, 10))
+
+        # Treeview con scrollbar
+        tree_frame = ttk.Frame(frame)
+        tree_frame.pack(fill=BOTH, expand=YES)
+
+        scrollbar = ttk.Scrollbar(tree_frame)
+        scrollbar.pack(side=RIGHT, fill=Y)
+
+        self.tree_ventas_bd = ttk.Treeview(
+            tree_frame,
+            columns=("id", "producto", "cantidad", "fecha"),
+            show="headings",
+            bootstyle="primary"
+        )
+        self.tree_ventas_bd.heading("id", text="ID Venta")
+        self.tree_ventas_bd.heading("producto", text="Producto")
+        self.tree_ventas_bd.heading("cantidad", text="Cantidad")
+        self.tree_ventas_bd.heading("fecha", text="Fecha")
+        self.tree_ventas_bd.column("id", width=80)
+        self.tree_ventas_bd.column("producto", width=200)
+        self.tree_ventas_bd.column("cantidad", width=100)
+        self.tree_ventas_bd.column("fecha", width=200)
+        self.tree_ventas_bd.pack(fill=BOTH, expand=YES)
+        scrollbar.config(command=self.tree_ventas_bd.yview)
+        self.tree_ventas_bd.configure(yscrollcommand=scrollbar.set)
+
+        # Botones de acción
+        btn_frame = ttk.Frame(self.tab_ventas_bd)
+        btn_frame.pack(fill=X, pady=(10, 0))
+        ttk.Button(
+            btn_frame,
+            text="Refrescar",
+            command=self._cargar_ventas_bd,
+            bootstyle="primary",
+            width=15
+        ).pack(side=LEFT, padx=5)
+        ttk.Button(
+            btn_frame,
+            text="Eliminar",
+            command=self._eliminar_venta_bd,
+            bootstyle="danger",
+            width=15
+        ).pack(side=LEFT, padx=5)
+        ttk.Button(
+            btn_frame,
+            text="Modificar",
+            command=self._modificar_venta_bd,
+            bootstyle="warning",
+            width=15
+        ).pack(side=LEFT, padx=5)
+
+        self._cargar_ventas_bd()
 
     def _cargar_productos(self):
         # Limpiar tree
@@ -822,7 +892,7 @@ class VentasView:
 
     def _cerrar_caja(self):
         # Verificar si hay ventas en el historial
-        if not self.controller.ventas_del_dia:
+        if not self.controller.get_ventas_en_bd():
             ttk.dialogs.Messagebox.show_warning(
                 "No hay ventas",
                 "No hay ventas registradas para cerrar caja",
@@ -886,6 +956,140 @@ class VentasView:
             bootstyle="primary",
             width=15
         ).pack(side=LEFT, padx=5)
+
+    def _cargar_ventas_bd(self):
+        # Limpiar tree
+        for item in self.tree_ventas_bd.get_children():
+            self.tree_ventas_bd.delete(item)
+        # Cargar ventas desde el controlador
+        ventas = self.controller.get_ventas_en_bd()
+        for venta in ventas:
+            self.tree_ventas_bd.insert(
+                "",
+                END,
+                values=(
+                    venta.id,
+                    venta.producto.nombre,
+                    venta.cantidad,
+                    venta.fecha
+                )
+            )
+
+    def _eliminar_venta_bd(self):
+        seleccion = self.tree_ventas_bd.selection()
+        if not seleccion:
+            ttk.dialogs.Messagebox.show_warning(
+                "Advertencia",
+                "Selecciona una venta para eliminar",
+                parent=self.ventana
+            )
+            return
+        item = self.tree_ventas_bd.item(seleccion[0])
+        venta_id = item["values"][0]
+        respuesta = ttk.dialogs.Messagebox.show_question(
+            "Confirmar",
+            "¿Estás seguro que deseas eliminar esta venta?",
+            parent=self.ventana
+        )
+        if respuesta == "Yes":
+            success, mensaje = self.controller.delete_venta_en_bd(venta_id)
+            if success:
+                ttk.dialogs.Messagebox.show_info(
+                    "Éxito",
+                    mensaje,
+                    parent=self.ventana
+                )
+                self._cargar_ventas_bd()
+            else:
+                ttk.dialogs.Messagebox.show_error(
+                    "Error",
+                    mensaje,
+                    parent=self.ventana
+                )
+
+    def _modificar_venta_bd(self):
+        seleccion = self.tree_ventas_bd.selection()
+        if not seleccion:
+            ttk.dialogs.Messagebox.show_warning(
+                "Advertencia",
+                "Selecciona una venta para modificar",
+                parent=self.ventana
+            )
+            return
+        item = self.tree_ventas_bd.item(seleccion[0])
+        venta_id = item["values"][0]
+        producto_nombre = item["values"][1]
+        cantidad = item["values"][2]
+        fecha = item["values"][3]
+
+        # Ventana de edición
+        edit_win = ttk.Toplevel(self.ventana)
+        edit_win.title("Modificar Venta")
+        edit_win.geometry("400x300")
+        edit_win.transient(self.ventana)
+        edit_win.grab_set()
+
+        frame = ttk.Frame(edit_win, padding=20)
+        frame.pack(fill=BOTH, expand=YES)
+
+        # Producto
+        ttk.Label(frame, text="Producto:").pack(anchor=W)
+        productos = self.controller.get_productos()
+        producto_nombres = [p.nombre for p in productos]
+        producto_var = ttk.StringVar(value=producto_nombre)
+        combo_producto = ttk.Combobox(frame, values=producto_nombres, textvariable=producto_var, state="readonly")
+        combo_producto.pack(fill=X, pady=5)
+
+        # Cantidad
+        ttk.Label(frame, text="Cantidad:").pack(anchor=W)
+        cantidad_var = ttk.StringVar(value=str(cantidad))
+        entry_cantidad = ttk.Entry(frame, textvariable=cantidad_var)
+        entry_cantidad.pack(fill=X, pady=5)
+
+        # Fecha
+        ttk.Label(frame, text="Fecha (YYYY-MM-DD HH:MM:SS):").pack(anchor=W)
+        fecha_var = ttk.StringVar(value=fecha)
+        entry_fecha = ttk.Entry(frame, textvariable=fecha_var)
+        entry_fecha.pack(fill=X, pady=5)
+
+        def guardar_cambios():
+            nuevo_producto_nombre = producto_var.get()
+            nuevo_producto = next((p for p in productos if p.nombre == nuevo_producto_nombre), None)
+            if not nuevo_producto:
+                ttk.dialogs.Messagebox.show_error(
+                    "Error",
+                    "Producto inválido",
+                    parent=edit_win
+                )
+                return
+            try:
+                nueva_cantidad = float(cantidad_var.get())
+            except ValueError:
+                ttk.dialogs.Messagebox.show_error(
+                    "Error",
+                    "Cantidad inválida",
+                    parent=edit_win
+                )
+                return
+            nueva_fecha = fecha_var.get()
+            success, mensaje = self.controller.update_venta_en_bd(venta_id, nuevo_producto.id, nueva_cantidad, nueva_fecha)
+            if success:
+                ttk.dialogs.Messagebox.show_info(
+                    "Éxito",
+                    mensaje,
+                    parent=edit_win
+                )
+                edit_win.destroy()
+                self._cargar_ventas_bd()
+            else:
+                ttk.dialogs.Messagebox.show_error(
+                    "Error",
+                    mensaje,
+                    parent=edit_win
+                )
+
+        ttk.Button(frame, text="Guardar Cambios", command=guardar_cambios, bootstyle="success").pack(pady=10)
+        ttk.Button(frame, text="Cancelar", command=edit_win.destroy, bootstyle="secondary").pack()
 
     def run(self):
         self.ventana.mainloop() 

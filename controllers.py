@@ -1,17 +1,18 @@
 from decimal import Decimal
 from typing import Optional, Tuple, List
-from models import Producto, Venta, RegistroVentas
-from repository import VentasRepository
+from models import Producto, Venta
+from repository import Repository
 
 class VentasController:
-    def __init__(self, repository: VentasRepository):
+    def __init__(self, repository: Repository):
         self.repository = repository
-        self.registro = RegistroVentas([])
-        self.ventas_del_dia = []  # Lista para almacenar todas las ventas del día
-
+        self.ventas_actuales = [] # Ventas cargadas en el ticket actual
+        self.ventas_del_dia = [] 
+#Obtener productos de la base de datos
     def get_productos(self) -> List[Producto]:
-        return self.repository.get_productos()
+        return self.repository.obtener_productos()
 
+#Agregar productos nuevos a la base de datos
     def add_producto(self, nombre: str, precio: str, unidad: str) -> Tuple[bool, str, Optional[Producto]]:
         try:
             # Validaciones
@@ -28,18 +29,15 @@ class VentasController:
             if unidad not in ["kg", "unidad"]:
                 return False, "La unidad debe ser 'kg' o 'unidad'", None
 
-            # Insertar producto
-            producto = self.repository.insert_producto(nombre, precio_decimal, unidad)
+            producto = Producto(nombre, float(precio_decimal), unidad)
+            self.repository.agregar_producto(producto)
             return True, "Producto agregado exitosamente", producto
 
-        except ValueError as e:
-            return False, str(e), None
         except Exception as e:
             return False, f"Error al agregar el producto: {str(e)}", None
-
+#Actualizar productos existentes
     def update_producto(self, id: int, nombre: str, precio: str, unidad: str) -> Tuple[bool, str, Optional[Producto]]:
         try:
-            # Validaciones
             if not nombre or not precio or not unidad:
                 return False, "Todos los campos son requeridos", None
             
@@ -53,26 +51,19 @@ class VentasController:
             if unidad not in ["kg", "unidad"]:
                 return False, "La unidad debe ser 'kg' o 'unidad'", None
 
-            # Actualizar producto
-            producto = self.repository.update_producto(id, nombre, precio_decimal, unidad)
-            if producto is None:
-                return False, "Producto no encontrado", None
-                
-            return True, "Producto actualizado exitosamente", producto
+            self.repository.editar_producto(id, nombre, float(precio_decimal), unidad)
+            return True, "Producto actualizado exitosamente", None
 
-        except ValueError as e:
-            return False, str(e), None
         except Exception as e:
             return False, f"Error al actualizar el producto: {str(e)}", None
-
+#Eliminar productos de la base de datos
     def delete_producto(self, id: int) -> Tuple[bool, str]:
         try:
-            if self.repository.delete_producto(id):
-                return True, "Producto eliminado exitosamente"
-            return False, "Producto no encontrado"
+            self.repository.eliminar_producto(id)
+            return True, "Producto eliminado exitosamente"
         except Exception as e:
             return False, f"Error al eliminar el producto: {str(e)}"
-
+#Agregar productos al carrito
     def procesar_venta(self, nombre_producto: str, cantidad: float) -> Tuple[bool, str, Optional[Venta]]:
         if not nombre_producto or cantidad <= 0:
             return False, "Datos de venta inválidos", None
@@ -81,63 +72,64 @@ class VentasController:
         if not producto:
             return False, "Producto no encontrado", None
 
-        total = producto.precio * Decimal(str(cantidad))
-        venta = Venta(producto, cantidad, total)
-        self.registro.agregar_venta(venta)
+        total = Decimal(str(cantidad)) * Decimal(str(producto.precio))
+        venta = Venta(producto, cantidad,None, total)
+        self.ventas_actuales.append(venta)
         
         return True, "", venta
-
+#Eliminar productos del carrito
     def eliminar_venta(self, index: int) -> bool:
-        if 0 <= index < len(self.registro.ventas):
-            self.registro.eliminar_venta(index)
+        if 0 <= index < len(self.ventas_actuales):
+            self.ventas_actuales.pop(index)
             return True
         return False
-
+#Vaciar el carrito
     def vaciar_registro(self):
-        self.registro.vaciar()
-
+        self.ventas_actuales.clear()
+#Registrar la venta actual
     def registrar_venta_actual(self):
-        """Registra la venta actual en el historial del día"""
-        if self.registro.ventas:
-            # Crear una copia de las ventas actuales
-            venta_actual = self.registro.ventas.copy()
-            # Agregar al historial del día
-            self.ventas_del_dia.extend(venta_actual)
-            # Limpiar el registro actual
-            self.registro.vaciar()
-            print(f"Venta registrada. Total de ventas del día: {len(self.ventas_del_dia)}")  # Debug
+        """Registra las ventas actuales en la base de datos"""
+        if self.ventas_actuales:
+            for venta in self.ventas_actuales:
+                self.repository.registrar_venta(venta.producto.id, venta.cantidad)
+            self.ventas_actuales.clear()
+            print(f"Venta registrada en la base de datos.")
 
     def cerrar_caja(self, turno: str) -> Tuple[bool, str]:
-        print(f"Intentando cerrar caja. Ventas del día: {len(self.ventas_del_dia)}")  # Debug
-        if not self.ventas_del_dia:
-            return False, "No hay ventas para guardar"
-            
-        try:
-            # Crear un registro temporal con todas las ventas del día
-            registro_dia = RegistroVentas(self.ventas_del_dia)
-            nombre_archivo = self.repository.generar_excel(registro_dia, turno)
-            # Limpiar el historial después de guardar
-            self.ventas_del_dia.clear()
-            return True, f"Excel {turno} generado como {nombre_archivo}"
-        except Exception as e:
-            return False, f"Error al generar Excel: {str(e)}"
+        ventas_del_dia = self.repository.obtener_ventas()
+        if not ventas_del_dia:
+            return False, "No hay ventas registradas para cerrar caja."
+        
+        total_dia = sum(Decimal(venta.cantidad) * Decimal(venta.producto.precio) for venta in ventas_del_dia)
+        mensaje = f"Turno {turno.capitalize()} cerrado. Total de ventas: ${total_dia:.2f}"
+        return True, mensaje
 
     @property
     def total_actual(self) -> Decimal:
-        return self.registro.total_dia
+        return sum(Decimal(venta.total) for venta in self.ventas_actuales)
 
     def get_ultima_venta(self) -> Optional[Venta]:
-        """Obtiene la última venta registrada"""
-        if self.registro.ventas:
-            return self.registro.ventas[-1]
+        """Obtiene la última venta registrada en el ticket actual"""
+        if self.ventas_actuales:
+            return self.ventas_actuales[-1]
         return None
 
-    def generar_ticket(self, venta: Venta) -> str:
-        """Genera un ticket PDF para una venta individual"""
-        if not venta:
-            raise ValueError("No hay venta para generar el ticket")
-            
+    def get_ventas_en_bd(self):
+        """Devuelve todas las ventas guardadas en la base de datos"""
+        return self.repository.obtener_ventas()
+
+    def update_venta_en_bd(self, venta_id, producto_id, cantidad, fecha):
+        """Actualiza una venta existente en la base de datos"""
         try:
-            return self.repository.generar_ticket(venta)
+            self.repository.editar_venta(venta_id, producto_id, cantidad, fecha)
+            return True, "Venta actualizada exitosamente"
         except Exception as e:
-            raise Exception(f"Error al generar el ticket: {str(e)}") 
+            return False, f"Error al actualizar la venta: {str(e)}"
+
+    def delete_venta_en_bd(self, venta_id):
+        """Elimina una venta de la base de datos"""
+        try:
+            self.repository.eliminar_venta(venta_id)
+            return True, "Venta eliminada exitosamente"
+        except Exception as e:
+            return False, f"Error al eliminar la venta: {str(e)}"

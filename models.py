@@ -1,33 +1,16 @@
-from dataclasses import dataclass
-from typing import List
-from decimal import Decimal
-
-@dataclass
 class Producto:
-    nombre: str
-    precio: Decimal
-    unidad: str
-    id: int = None
+    def __init__(self, nombre, precio, unidad):
+        self.id = None  # ID en la base de datos (se asigna al obtenerlo)
+        self.nombre = nombre
+        self.precio = precio
+        self.unidad = unidad
 
-@dataclass
 class Venta:
-    producto: Producto
-    cantidad: float
-    total: Decimal
+    def __init__(self, producto, cantidad, fecha=None, total=None):
+        self.id = None
+        self.producto = producto
+        self.cantidad = cantidad
+        self.fecha = fecha
+        self.total = total
 
-@dataclass
-class RegistroVentas:
-    ventas: List[Venta]
-    total_dia: Decimal = Decimal('0')
 
-    def agregar_venta(self, venta: Venta):
-        self.ventas.append(venta)
-        self.total_dia += venta.total
-
-    def eliminar_venta(self, index: int):
-        venta = self.ventas.pop(index)
-        self.total_dia -= venta.total
-
-    def vaciar(self):
-        self.ventas.clear()
-        self.total_dia = Decimal('0') 

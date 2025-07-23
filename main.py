@@ -1,10 +1,10 @@
-from repository import VentasRepository
+from repository import Repository
 from controllers import VentasController
 from views import VentasView
 
 def main():
-    # Inicializar capas
-    repository = VentasRepository()
+    # Inicializar capas con Repository real que usa SQLite
+    repository = Repository()
     controller = VentasController(repository)
     view = VentasView(controller)
     
@@ -12,4 +12,4 @@ def main():
     view.run()
 
 if __name__ == "__main__":
-    main() 
+    main()
